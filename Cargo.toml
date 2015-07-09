@@ -1,0 +1,27 @@
+[package]
+
+name = "bitalloc"
+version = "0.0.1"
+authors = [ "Keunhong Lee <dlrmsghd@gmail.com>" ]
+
+homepage = "https://github.com/ANLAB-KAIST/rust-bitalloc"
+repository = "https://github.com/ANLAB-KAIST/rust-bitalloc"
+documentation = "https://github.com/ANLAB-KAIST/rust-bitalloc"
+license = "MIT"
+keywords = ["bitalloc", "allocator", "bitmap", "alloc", "malloc"]
+
+description = """
+Allocation managing library based on bitmap.
+This library does not include bitmap library.
+"""
+
+[dependencies]
+ilog2 = "*"
+
+[lib]
+name = "bitalloc"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rust_bitalloc_test"
+path = "src/main.rs"
