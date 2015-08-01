@@ -8,6 +8,7 @@ pub trait Bitalloc {
     fn clear_all(&mut self);
     fn fill_all(&mut self);
     fn alloc(&mut self, size: usize) -> isize;
+    fn free(&mut self, from: usize, size: usize);
 }
 
 impl<T: ilog2::Bitops + Binary> Bitalloc for [T] {
@@ -109,6 +110,9 @@ impl<T: ilog2::Bitops + Binary> Bitalloc for [T] {
                         continue;
                     } else if val == T::zero() {
                         blocks_allocated += 1;
+                    } else {
+                        state = State::FindFirst;
+                        continue;
                     }
                 },
                 State::FindLast => {
@@ -137,9 +141,9 @@ impl<T: ilog2::Bitops + Binary> Bitalloc for [T] {
             }
             let mut update_index = found_index;
             assert!(self[update_index] & first_mask == T::zero());
-            println!("Allocate first at block {} [{},{}] : {:064b}", update_index, found_index, found_offset, self[update_index]);
+            //println!("Allocate first at block {} [{},{}] : {:064b}", update_index, found_index, found_offset, self[update_index]);
             self[update_index] = self[update_index] | first_mask;
-            println!("Allocate first at block {} [{},{}] : {:064b}", update_index, found_index, found_offset, self[update_index]);
+            //println!("Allocate first at block {} [{},{}] : {:064b}", update_index, found_index, found_offset, self[update_index]);
             update_index += 1;
             
             let rem = size - allocated;
@@ -147,15 +151,15 @@ impl<T: ilog2::Bitops + Binary> Bitalloc for [T] {
             let last_fill = rem % block_size;
             
             for i in 0 .. fill {
-                println!("Allocate mid at block {} [{},{}] : {:064b}", update_index + i, found_index, found_offset, self[update_index + i]);
+                //println!("Allocate mid at block {} [{},{}] : {:064b}", update_index + i, found_index, found_offset, self[update_index + i]);
                 let mid_mask = ilog2::bit_mask::<T>();
                 assert!(self[update_index + i] & mid_mask == T::zero());
                 self[update_index + i] = self[update_index + i] | mid_mask;
                 allocated += block_size;
-                println!("Allocate mid at block {} [{},{}] : {:064b}", update_index + i, found_index, found_offset, self[update_index + i]);
+                //println!("Allocate mid at block {} [{},{}] : {:064b}", update_index + i, found_index, found_offset, self[update_index + i]);
             }
             if last_fill > 0 {
-                println!("Allocate last at block {} [{},{}] : {:064b}", update_index + fill, found_index, found_offset, self[update_index + fill]);
+                //println!("Allocate last at block {} [{},{}] : {:064b}", update_index + fill, found_index, found_offset, self[update_index + fill]);
                 let mut last_mask = ilog2::bit_mask::<T>();
                 let diff = block_size - last_fill;
                 last_mask = last_mask >> diff;
@@ -163,7 +167,7 @@ impl<T: ilog2::Bitops + Binary> Bitalloc for [T] {
                 assert!(self[update_index + fill] & last_mask == T::zero());
                 self[update_index + fill] = self[update_index + fill] | last_mask;
                 allocated += last_fill;
-                println!("Allocate last at block {} [{},{}] : {:064b}", update_index + fill, found_index, found_offset, self[update_index + fill]);
+                //println!("Allocate last at block {} [{},{}] : {:064b}", update_index + fill, found_index, found_offset, self[update_index + fill]);
             }
             assert!(allocated == size);
             
@@ -171,5 +175,51 @@ impl<T: ilog2::Bitops + Binary> Bitalloc for [T] {
         } else {
             -1isize            
         }
+    }
+    fn free(&mut self, from: usize, size: usize) {
+        let block_size = ilog2::bit_length::<T>() as usize;
+        let mut freed = 0usize;
+        let mut first_mask = ilog2::bit_mask::<T>();
+        let found_offset = from % block_size;
+        let found_index = from / block_size;
+        first_mask = first_mask >> found_offset;
+        freed += block_size - found_offset;
+        if freed > size {
+            let diff = freed - size;
+            first_mask = first_mask >> diff;
+            first_mask = first_mask << diff;
+            freed = size;
+        }
+        let mut update_index = found_index;
+        assert!(self[update_index] & first_mask == first_mask);
+        //println!("Free first at block {} [{},{}] : {:064b}", update_index, found_index, found_offset, self[update_index]);
+        self[update_index] = self[update_index] ^ first_mask;
+        //println!("Free first at block {} [{},{}] : {:064b}", update_index, found_index, found_offset, self[update_index]);
+        update_index += 1;
+        
+        let rem = size - freed;
+        let fill = rem / block_size;
+        let last_fill = rem % block_size;
+        
+        for i in 0 .. fill {
+            //println!("Free mid at block {} [{},{}] : {:064b}", update_index + i, found_index, found_offset, self[update_index + i]);
+            let mid_mask = ilog2::bit_mask::<T>();
+            assert!(self[update_index + i] & mid_mask == mid_mask);
+            self[update_index + i] = self[update_index + i] ^ mid_mask;
+            freed += block_size;
+            //println!("Free mid at block {} [{},{}] : {:064b}", update_index + i, found_index, found_offset, self[update_index + i]);
+        }
+        if last_fill > 0 {
+            //println!("Free last at block {} [{},{}] : {:064b}", update_index + fill, found_index, found_offset, self[update_index + fill]);
+            let mut last_mask = ilog2::bit_mask::<T>();
+            let diff = block_size - last_fill;
+            last_mask = last_mask >> diff;
+            last_mask = last_mask << diff;
+            assert!(self[update_index + fill] & last_mask == last_mask);
+            self[update_index + fill] = self[update_index + fill] ^ last_mask;
+            freed += last_fill;
+            //println!("Free last at block {} [{},{}] : {:064b}", update_index + fill, found_index, found_offset, self[update_index + fill]);
+        }
+        assert!(freed == size);
     }
 }
