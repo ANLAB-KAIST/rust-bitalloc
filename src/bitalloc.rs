@@ -1,49 +1,27 @@
 extern crate ilog2;
+extern crate num;
 
+use std::fmt::Binary;
 use self::ilog2::Future;
 
-pub type T = u64;
-
-pub struct Bitalloc<'a> {
-	buffer: &'a mut [T],
+pub trait Bitalloc {
+    fn clear_all(&mut self);
+    fn fill_all(&mut self);
+    fn alloc(&mut self, size: usize) -> isize;
 }
 
-
-
-impl<'a> Bitalloc<'a,> {
-	pub fn get_bit_count(buffer: & [T]) -> usize {
-		buffer.len() * ilog2::bit_length::<T>()
-	}
-	pub fn wrap(entries: usize, buffer: &'a mut [T]) -> Option<Bitalloc<'a>> {
-		let mut ok : bool = true;
-		let bits = Bitalloc::get_bit_count(buffer);
-		if entries > bits {
-			ok = false;
-		}
-		if ok {
-			Some(
-				Bitalloc::<'a> {
-					//entries: entries,
-					//segment_size: buffer.len(),
-					buffer: buffer,
-				}
-			)
-		} else {
-			None
+impl<T: ilog2::Bitops + Binary> Bitalloc for [T] {
+	fn clear_all(&mut self) {
+		for item in self.iter_mut() {
+			*item = T::zero();
 		}
 	}
-	
-	pub fn clear_all(&mut self) {
-		for item in self.buffer.iter_mut() {
-			*item = 0;
-		}
-	}
-	pub fn fill_all(&mut self) {
-		for item in self.buffer.iter_mut() {
+	fn fill_all(&mut self) {
+		for item in self.iter_mut() {
 			*item = ilog2::bit_mask::<T>();
 		}
 	}
-	pub fn alloc(&mut self, size: usize) -> isize {
+	fn alloc(&mut self, size: usize) -> isize {
 	    let block_size = ilog2::bit_length::<T>() as usize;
 	    let block_count = size / block_size;
 	    let rem_count = size % block_size;
@@ -64,12 +42,12 @@ impl<'a> Bitalloc<'a,> {
 	    let mut found = false;
 	    let mut state = State::FindFirst;
 	    let mut index = 0usize;
-	    let limit = self.buffer.len();
+	    let limit = self.len();
 	    loop {
 	        if index == limit {
 	            break;
 	        }
-	        let val = self.buffer[index];
+	        let val = self[index];
 	        
 	        match state {
 	            State::FindFirst => {
@@ -93,7 +71,7 @@ impl<'a> Bitalloc<'a,> {
 	                            found_offset = shifted;
 	                            break;
 	                        }
-	                        possible <<= current_available; //discard current;
+	                        possible = possible << current_available; //discard current;
 	                        shifted += current_available;
 	                        //println!("debug3 {} {} {} {:064b}", current_available, size, shifted, possible);
 	                        let current_skip = possible.leading_ones() as usize;
@@ -101,8 +79,8 @@ impl<'a> Bitalloc<'a,> {
 	                        if (shifted + size) > block_size {
 	                            break;
 	                        }
-	                        possible <<= current_skip;
-	                        possible |= ilog2::bit_mask::<T>() >> (block_size - shifted);
+	                        possible = possible << current_skip;
+	                        possible = possible | ilog2::bit_mask::<T>() >> (block_size - shifted);
 	                        //println!("debug4 {} {} {} {:064b}", current_available, size, shifted, possible);
 	                    }
 	                    if found {
@@ -129,7 +107,7 @@ impl<'a> Bitalloc<'a,> {
 	                if blocks_allocated == blocks_needed {
 	                    state = State::FindLast;
 	                    continue;
-	                } else if val == 0 {
+	                } else if val == T::zero() {
 	                    blocks_allocated += 1;
 	                }
 	            },
@@ -151,19 +129,19 @@ impl<'a> Bitalloc<'a,> {
 	        let mut allocated = 0usize;
 	        
             let mut first_mask = ilog2::bit_mask::<T>();
-            first_mask >>= found_offset;
+            first_mask = first_mask >> found_offset;
             allocated += block_size - found_offset;
             if allocated > size {
                 let diff = allocated - size;
-                first_mask >>= diff;
-                first_mask <<= diff;
+                first_mask = first_mask >> diff;
+                first_mask = first_mask << diff;
                 allocated = size;
             }
             let mut update_index = found_index;
-            assert_eq!(self.buffer[update_index] & first_mask, 0);
-            println!("Allocate first at block {} [{},{}] : {:064b}", update_index, found_index, found_offset, self.buffer[update_index]);
-            self.buffer[update_index] |= first_mask;
-            println!("Allocate first at block {} [{},{}] : {:064b}", update_index, found_index, found_offset, self.buffer[update_index]);
+            assert!(self[update_index] & first_mask == T::zero());
+            println!("Allocate first at block {} [{},{}] : {:064b}", update_index, found_index, found_offset, self[update_index]);
+            self[update_index] = self[update_index] | first_mask;
+            println!("Allocate first at block {} [{},{}] : {:064b}", update_index, found_index, found_offset, self[update_index]);
             update_index += 1;
             
             let rem = size - allocated;
@@ -171,25 +149,25 @@ impl<'a> Bitalloc<'a,> {
             let last_fill = rem % block_size;
             
             for i in 0 .. fill {
-                println!("Allocate mid at block {} [{},{}] : {:064b}", update_index + i, found_index, found_offset, self.buffer[update_index + i]);
+                println!("Allocate mid at block {} [{},{}] : {:064b}", update_index + i, found_index, found_offset, self[update_index + i]);
                 let mid_mask = ilog2::bit_mask::<T>();
-                assert_eq!(self.buffer[update_index + i] & mid_mask, 0);
-                self.buffer[update_index + i] |= mid_mask;
+                assert!(self[update_index + i] & mid_mask == T::zero());
+                self[update_index + i] = self[update_index + i] | mid_mask;
                 allocated += block_size;
-                println!("Allocate mid at block {} [{},{}] : {:064b}", update_index + i, found_index, found_offset, self.buffer[update_index + i]);
+                println!("Allocate mid at block {} [{},{}] : {:064b}", update_index + i, found_index, found_offset, self[update_index + i]);
             }
             if last_fill > 0 {
-                println!("Allocate last at block {} [{},{}] : {:064b}", update_index + fill, found_index, found_offset, self.buffer[update_index + fill]);
+                println!("Allocate last at block {} [{},{}] : {:064b}", update_index + fill, found_index, found_offset, self[update_index + fill]);
                 let mut last_mask = ilog2::bit_mask::<T>();
                 let diff = block_size - last_fill;
-                last_mask >>= diff;
-                last_mask <<= diff;
-                assert_eq!(self.buffer[update_index + fill] & last_mask, 0);
-                self.buffer[update_index + fill] |= last_mask;
+                last_mask = last_mask >> diff;
+                last_mask = last_mask << diff;
+                assert!(self[update_index + fill] & last_mask == T::zero());
+                self[update_index + fill] = self[update_index + fill] | last_mask;
                 allocated += last_fill;
-                println!("Allocate last at block {} [{},{}] : {:064b}", update_index + fill, found_index, found_offset, self.buffer[update_index + fill]);
+                println!("Allocate last at block {} [{},{}] : {:064b}", update_index + fill, found_index, found_offset, self[update_index + fill]);
             }
-            assert_eq!(allocated, size);
+            assert!(allocated == size);
             
             ((found_index * block_size) + found_offset) as isize
 	    } else {
