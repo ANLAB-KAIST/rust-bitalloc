@@ -2,7 +2,7 @@ extern crate ilog2;
 extern crate num;
 
 use std::fmt::Binary;
-use self::ilog2::Future;
+use self::ilog2::Bitops;
 
 pub trait Bitalloc {
     fn clear_all(&mut self);
